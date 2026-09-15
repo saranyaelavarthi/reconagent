@@ -4,12 +4,13 @@ Generates three synthetic datasets that simulate a real reconciliation problem:
   2. ledger.csv          -> what your internal system recorded
   3. bank_statement.csv  -> what actually hit the bank account
 
-~18% of rows are deliberately broken (fees, timing, duplicates, rounding,
-partial refunds, missing entries) so the matcher has real work to do.
+Synthetic scenarios include delayed credits, rounding differences, partial
+refunds, duplicate bank entries, and missing bank entries.
 """
 import pandas as pd
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
 
 random.seed(42)
 N = 80  # total transactions -> comfortably clears the 50+ record bar
@@ -80,6 +81,8 @@ for i in range(N):
         rows_ledger.append({"txn_id": txn_id, "merchant": merchant,
                              "recorded_amount": net, "record_date": date.strftime("%Y-%m-%d")})
         # no bank row at all
+
+Path("data").mkdir(parents=True, exist_ok=True)
 
 pd.DataFrame(rows_settlement).to_csv("data/settlement.csv", index=False)
 pd.DataFrame(rows_ledger).to_csv("data/ledger.csv", index=False)

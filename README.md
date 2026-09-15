@@ -1,66 +1,91 @@
 # ReconAgent
 
-**Track:** AI Finance Controller — Razorpay AI Buildathon 2026
+**Reconciliation demo · Python · pandas · Streamlit**
 
-An agent that reconciles three sources of truth — a Razorpay settlement report, an internal ledger, and a bank statement — and produces an **honest, auditable** reconciliation: a real match rate on the full batch, every exception classified by reason, and a full audit trail explaining *why* each transaction did or didn't match.
+Match synthetic settlement records against bank credits, inspect exceptions, and explore the results in a dashboard.
 
-## The problem
+[Portfolio](https://github.com/saranyaelavarthi/development) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Scope](#scope-and-limitations)
 
-Reconciliation is rarely one clean step. Settlements land, but timing gaps, rounding drift, partial refunds, duplicate credits, and missing entries all creep in — and today this is mostly done by hand. This agent closes that loop: detect, classify, explain, and report — without cherry-picking the easy cases.
+## At a glance
 
-## Results (this run)
+| Capability | Current implementation |
+| --- | --- |
+| Reproducible data | Seeded generator creates settlement, ledger, and bank CSV files. |
+| Matching | Transaction IDs, amount tolerance, and settlement-to-bank date gaps. |
+| Exception reporting | Delays, missing credits, duplicate markers, rounding differences, and possible partial refunds. |
+| Investigation | JSON audit report, exception CSV, filters, and expandable dashboard records. |
+| Optional AI assistance | Anthropic API explanations for exceptions; the default demo runs without an API key. |
 
-```
-Total transactions:   80
-Clean matches:        50   (62.5%)
-Exceptions:           30
-  TIMING_GAP:         11   — amount correct, credited late
-  PARTIAL_REFUND:      8   — bank credited less than expected
-  DUPLICATE:            7   — bank shows two credits for one transaction
-  MISSING:              3   — no bank entry found at all
-  ROUNDING_DRIFT:       1   — small currency/rounding difference
-```
+## Quick start
 
-This is the **full batch result**, not a curated sample — including the transactions the agent could *not* cleanly resolve, per the track's own bar: "One cherry-picked match proves nothing."
-
-## Architecture
-
-```
-settlement.csv ─┐
-ledger.csv      ├──▶  reconcile.py  ──▶  reconciliation_report.json (full audit trail)
-bank_statement.csv ┘         │                    │
-                              │                    └──▶ exceptions.csv
-                    ┌─────────┴──────────┐
-                    │  1. Exact match     │  txn_id + amount + date, rule-based
-                    │  2. Fuzzy match     │  tolerance-based amount/date matching
-                    │  3. LLM resolution  │  classifies + explains ambiguous cases
-                    │     (with rule-based fallback if no API key)
-                    └────────────────────┘
-                              │
-                    app.py (Streamlit dashboard)
-```
-
-**Why this design:** rules handle the ~80% of cases that are genuinely simple (fast, cheap, deterministic, fully explainable). The LLM is used only where it earns its keep — classifying and explaining the ambiguous ~20% in plain language. If no `ANTHROPIC_API_KEY` is set, a deterministic rule-based classifier takes over automatically, so the pipeline **never silently breaks**.
-
-## Running it
+Use Python 3.10 or newer. Run commands from the repository root.
 
 ```bash
-pip install -r requirements.txt
-
-# optional — enables LLM-assisted reasoning on ambiguous cases
-export ANTHROPIC_API_KEY=your_key_here
-
-python generate_data.py     # generates synthetic settlement/ledger/bank data
-python reconcile.py         # runs the full reconciliation, prints summary
-streamlit run app.py        # interactive dashboard with the full audit trail
+git clone https://github.com/saranyaelavarthi/reconagent.git
+cd reconagent
+python -m venv .venv
 ```
 
-## What broke during development (and how it was fixed)
+Activate the environment:
 
-Early versions matched purely on amount, which produced false positives — two unrelated transactions of the same value were flagged as a "match" if dates were close. Fixed by requiring **both** amount tolerance and date tolerance to pass before calling something clean, and routing anything that fails either check to the classification layer instead of silently accepting it. This is also why duplicate bank credits are checked *before* the fuzzy-match pass — otherwise a duplicate could mask itself as a clean match.
+- macOS / Linux: `source .venv/bin/activate`
+- Windows PowerShell: `.venv\Scripts\Activate.ps1`
 
-## What I'd add with more time
+Then run:
 
-- Multi-currency support (right now the tolerance model assumes INR)
-- A "promise-to-pay" style retry loop for the MISSING category
-- Precision/recall tracking against a labeled ground-truth set, not just match rate
+```bash
+python -m pip install -r requirements.txt
+python generate_data.py
+python reconcile.py
+python -m streamlit run app.py
+```
+
+Open the local URL printed by Streamlit. The generator creates the `data/` directory automatically; reconciliation writes its results to `output/`.
+
+No API key is needed for this path. If `ANTHROPIC_API_KEY` is already set in your environment, remove it to use only the rule-based demo. Setting it enables calls to the Anthropic API for exception explanations. Use synthetic data when exploring this option.
+
+## How it works
+
+1. **Generate:** create synthetic settlement, ledger, and bank records with a fixed random seed.
+2. **Match:** look up bank records by transaction ID and compare credited amounts and dates against settlements.
+3. **Classify:** report duplicate markers, missing credits, timing gaps, and amount differences.
+4. **Inspect:** open the dashboard or read the exported audit and exception files.
+
+The current clean-match tolerance is **₹1** and **one day**. Ledger records are loaded as context; the deterministic clean-match decision compares settlement and bank data.
+
+## Reproduced demo result
+
+The no-key pipeline was run on September 15, 2026 with the seeded dataset:
+
+| Metric | Result |
+| --- | ---: |
+| Settlement transactions | 80 |
+| Clean matches | 50 |
+| Exceptions | 30 |
+| Match rate for this dataset | 62.5% |
+
+Exceptions: 11 timing gaps, 8 possible partial refunds, 7 duplicate cases, 3 missing credits, and 1 rounding difference. This is a synthetic demo result, not a production accuracy or performance benchmark.
+
+## Repository guide
+
+| File | Purpose |
+| --- | --- |
+| [generate_data.py](generate_data.py) | Creates the seeded CSV inputs. |
+| [reconcile.py](reconcile.py) | Matches records, classifies exceptions, and exports reports. |
+| [app.py](app.py) | Streamlit dashboard for reviewing results. |
+| [requirements.txt](requirements.txt) | Python dependencies. |
+
+Generated files: `data/settlement.csv`, `data/ledger.csv`, `data/bank_statement.csv`, `output/reconciliation_report.json`, and `output/exceptions.csv`.
+
+## Scope and limitations
+
+This is a learning prototype using synthetic CSVs. It has no live banking or Razorpay integration. Duplicate detection follows the generator's `_dup` convention; refund labels are heuristic explanations. Reported confidence values are illustrative and are not calibrated probabilities.
+
+Full three-way ledger validation, production access controls, durable audit storage, and a regression test suite are future work.
+
+## Next steps
+
+- [ ] Validate the ledger independently of settlement-to-bank matching.
+- [ ] Test malformed inputs, duplicate IDs, and empty datasets.
+- [ ] Replace synthetic duplicate markers with explicit business keys.
+- [ ] Add repeatable automated checks for classification rules.
